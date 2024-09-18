@@ -28,9 +28,65 @@ typedef struct index {
 	}
 } Index;
 
+vector<string> split_string(const string& s, const string& delimiter) {
+    vector<string> tokens;
+    size_t start = 0;
+    size_t end = s.find(delimiter);
+    
+    while (end != string::npos) {
+        tokens.push_back(s.substr(start, end - start));
+        start = end + delimiter.length();
+        end = s.find(delimiter, start);
+    }
+    
+    // Add the last token
+    tokens.push_back(s.substr(start));
+
+    return tokens;
+}
+
 typedef struct tensor {
 	vector<int> dimensions;
 	vector<int> data;
+	map<int,int> transform; // to convert new dims to old dims
+	bool rearranged = false;
+
+	// a b c d->b a d c
+	// TODO: expand it to do some regex stuff,
+	// 	 where all the dims need not be specified.
+	void rearrange(string s){
+		if(!rearranged){
+			rearranged = true;
+			for(int i = 0; i < dimensions.size(); i++)
+				transform[i] = i;
+		}
+
+		vector<string> input_output = split_string(s, "->");
+		string from = input_output[0];
+		string to = input_output[1];
+		
+		// TODO: trim the dim strings
+		vector<string> from_dims = split_string(from, " ");
+		vector<string> to_dims = split_string(to, " ");
+		assert(from_dims.size() == to_dims.size());
+		assert(from_dims.size() == dimensions.size());
+
+		// Initialize to it's own dimension 
+		// if not already assigned to something else.
+		/* for(int i = 0; i < dimensions.size(); i++){
+			if(transform[i] == 0)
+				transform[i] = i;
+		} */
+
+		map<string, int> input_to_idx;
+		for(int i = 0; i < from_dims.size(); i++){
+			input_to_idx[from_dims[i]] = i;
+		}
+		auto old_transform = transform;
+		for(int i = 0; i < to_dims.size(); i++){
+			transform[i] = old_transform[input_to_idx[to_dims[i]]]; // new_dim to old_dim
+		}
+	}
 
 	vector<int> toNdIdx(int idx){
 		vector<int> idxs;
@@ -49,8 +105,17 @@ typedef struct tensor {
 	//
 	// Lets loop over each element and see if it fits the indexing
 
-	struct tensor operator[](vector<Index> idxs){
-		assert(idxs.size() <= dimensions.size());
+	struct tensor operator[](vector<Index> new_idxs){
+		assert(new_idxs.size() <= dimensions.size());
+
+		vector<Index> idxs(dimensions.size()); // to original dimensions
+		if(rearranged){
+			for(int i = 0; i < new_idxs.size(); i++){
+				idxs[transform[i]] = new_idxs[i];
+			}
+		}
+		else
+			idxs = new_idxs;
 		struct tensor result;
 		// what would be the output dim?
 		for(int i = 0; i < dimensions.size(); i++){
@@ -142,6 +207,37 @@ ostream& operator<<(ostream& os, struct tensor& t){
 	t.print_dim(os, 0, 0, t.data.size());
 	return os;
 }
+
+void test_rearrange(){
+	cout << "Testing Rearrange" << endl; 
+	Tensor t;
+	t.dimensions = {10, 5};
+	for(int i = 0; i < 10; i++){
+		for(int j = 0; j < 5; j++){
+			t.data.push_back( (i + 1) * (j + 1));
+		}
+	}
+
+	cout<< t;
+
+	t.rearrange("a b->a b");
+	t.rearrange("a b->a b");
+	t.rearrange("a b->b a");
+	t.rearrange("a b->a b");
+	t.rearrange("a b->a b");
+	t.rearrange("a b->a b");
+	t.rearrange("a b->b a");
+	t.rearrange("a b->b a");
+	for(int i = 0; i < 5; i++){
+		for(int j = 0; j < 10; j++){
+			Index idx_row = {i, i+1, 1};
+			Index idx_col = {j, j+1, 1};
+			cout << t[{idx_row, idx_col}].data[0] << " ";
+		}
+		cout << endl;
+	}
+}
+
 int main(){
 	Tensor t;
 	t.dimensions = {2, 3};
@@ -162,5 +258,9 @@ int main(){
 	Tensor t4 = t3[{i3, i3}];
 	
 	cout<< t4 <<endl;
+	
+	// TODO: separate into files, make separate functiosn to test things
+	test_rearrange();
+
 	return 0;
 }
